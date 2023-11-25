@@ -9,10 +9,10 @@ from pprint import pprint
 FILENAME = 'hackaton2023_train.gzip'
 PATH = os.getcwd()
 CLASSTERS_FILE = './classters.pkl'
-TRAIN = True
+TRAIN = False
 DEBUG = True
 
-data = pd.read_parquet(PATH + "./" + FILENAME).iloc[:1000]
+data = pd.read_parquet(PATH + "./" + FILENAME)
 
 data.drop('group_name', axis=1, inplace=True)
 # Кластеризация товаров чека
@@ -43,7 +43,8 @@ aggregated_data_cheque = data.groupby(['customer_id', 'startdatetime'], as_index
     'format_name': 'first', 
     'ownareaall_sqm': 'first', 
     **{key: 'first' for key in classters.keys()}}.update((
-        {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {})))
+        {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {}))
+)
 
 if DEBUG:
     params = {
@@ -51,8 +52,9 @@ if DEBUG:
     'dish_name': ', '.join,
     'format_name': 'first', 
     'ownareaall_sqm': 'first', 
-    **{key: 'first' for key in classters.keys()}}.update((
+    **{key: 'first' for key in classters.keys()}.update((
         {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {}))
+    }
     assert params.get('buy_post')
     assert params.get('date_diff_post')
     for key in classters.keys():
@@ -165,9 +167,30 @@ def mode_func(x):
     modes = x.mode()
     return modes.iloc[0] if not modes.empty else None
 
-aggregated_data_user = aggregated_data_cheque
+aggregated_data_user = aggregated_data_cheque.groupby('customer_id', as_index=False).agg({
+    'revenue':'median',
+    'dish_name':','.join,
+    'format_name':mode_func,
+    'ownareaall_sqm':mode_func,
+    'day_h':mode_func,
+    'time_h':'median',
+    'time_name_h':mode_func,
+    'month_h':mode_func,
+    'weekday_h':mode_func,
+    'quarter_h':mode_func,
+    'delta_mean_day':'median',
+    'min_customer': 'min',
+    'max_customer': 'max',
+    'std_customer': 'std',
+    'coef_trend':'first',
+    'purchase_count':'first',
+    'total_time_between_purchases': 'first',
+    'average_time_between_purchases': 'first',
+    **{key: 'first' for key in classters.keys()}}.update((
+        {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {}))
+).reset_index()
 
-# aggregated_data_user['revenue_delta_class'] = aggregated_data_user.apply(lambda row: 495.0359785392551 - row['revenue'] if abs(row['delta_mean_day'])> 43 else 491.0214675593032 - row['revenue'], axis=1)
+aggregated_data_user['revenue_delta_class'] = aggregated_data_user.apply(lambda row: 495.0359785392551 - row['revenue'] if abs(row['delta_mean_day'])> 43 else 491.0214675593032 - row['revenue'], axis=1)
 
 # признаки места 
 aggregated_data_user['toilet']= aggregated_data_user['format_name'].apply(lambda x: 1 if 'с туалетом' in x else 0)
