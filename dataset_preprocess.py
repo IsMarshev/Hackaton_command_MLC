@@ -5,14 +5,15 @@ from workalendar.europe import Russia
 import os
 import pickle
 from pprint import pprint
+from sklearn.preprocessing import MinMaxScaler
 
 FILENAME = 'hackaton2023_train.gzip'
 PATH = os.getcwd()
 CLASSTERS_FILE = './classters.pkl'
-TRAIN = False
+TRAIN = True
 DEBUG = True
 
-data = pd.read_parquet(PATH + "./" + FILENAME)
+data = pd.read_parquet(PATH + "./" + FILENAME)[:100]
 
 data.drop('group_name', axis=1, inplace=True)
 # Кластеризация товаров чека
@@ -36,25 +37,20 @@ for _data, i in zip(values, indexes):
 data[sorted(list(classters.keys()))] = values.astype(np.int8)
 del values, indexes
 
-# группировка по чекам
-aggregated_data_cheque = data.groupby(['customer_id', 'startdatetime'], as_index=False).agg({
-    'revenue': 'sum',
-    'dish_name': ', '.join,
-    'format_name': 'first', 
-    'ownareaall_sqm': 'first', 
-    **{key: 'first' for key in classters.keys()}}.update((
-        {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {}))
-)
 
-if DEBUG:
-    params = {
+_params = {
     'revenue': 'sum',
     'dish_name': ', '.join,
     'format_name': 'first', 
     'ownareaall_sqm': 'first', 
-    **{key: 'first' for key in classters.keys()}.update((
+    **{key: 'first' for key in classters.keys()}}
+_params.update((
         {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {}))
-    }
+# группировка по чекам
+aggregated_data_cheque = data.groupby(['customer_id', 'startdatetime'], as_index=False).agg(_params)
+
+if DEBUG and TRAIN:
+    params = _params
     assert params.get('buy_post')
     assert params.get('date_diff_post')
     for key in classters.keys():
@@ -167,7 +163,7 @@ def mode_func(x):
     modes = x.mode()
     return modes.iloc[0] if not modes.empty else None
 
-aggregated_data_user = aggregated_data_cheque.groupby('customer_id', as_index=False).agg({
+_params = {
     'revenue':'median',
     'dish_name':','.join,
     'format_name':mode_func,
@@ -186,9 +182,11 @@ aggregated_data_user = aggregated_data_cheque.groupby('customer_id', as_index=Fa
     'purchase_count':'first',
     'total_time_between_purchases': 'first',
     'average_time_between_purchases': 'first',
-    **{key: 'first' for key in classters.keys()}}.update((
+    **{key: 'first' for key in classters.keys()}}
+_params.update((
         {'buy_post': 'first', 'date_diff_post': 'first', } if TRAIN else {}))
-).reset_index()
+
+aggregated_data_user = aggregated_data_cheque.groupby('customer_id', as_index=False).agg(_params).reset_index()
 
 aggregated_data_user['revenue_delta_class'] = aggregated_data_user.apply(lambda row: 495.0359785392551 - row['revenue'] if abs(row['delta_mean_day'])> 43 else 491.0214675593032 - row['revenue'], axis=1)
 
@@ -210,4 +208,10 @@ aggregated_data_user = pd.merge(aggregated_data_user, patern, on='customer_id', 
 
 aggregated_data_user['total number of positions']= aggregated_data_user['dish_name'].str.count(',')+1
 
+data_to_scale = aggregated_data_user[['revenue']]
+log_transformed_data = np.log1p(data_to_scale)
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data_to_scale)
+df_scaled = pd.DataFrame(scaled_data, columns=['revenue_scaled'])
+aggregated_data_user['revenue'] = df_scaled['revenue_scaled']
 aggregated_data_user.to_parquet('END.parquet')
